@@ -10,6 +10,12 @@ def result(position: Position) -> Result | None:
     if position.mode != "hybrid":
         return _chess_only_result(position)
 
+    if not position.config.king_capture_immunity and "K" not in position.board:
+        # Only reachable with the king_capture_immunity experiment flag off —
+        # with it on (default), checkers_gen never generates a move that
+        # removes K, so this branch never fires.
+        return Result.CHECKERS_WIN
+
     checkers_left = sum(1 for ch in position.board if ch in ("c", "C"))
     if checkers_left == 0:
         return Result.CHESS_WIN

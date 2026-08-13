@@ -72,6 +72,8 @@ class RuleConfig:
     first_mover: str = 'random'
     fifty_move_plies: int = 100
     promotion_ends_jump_chain: bool = True
+    king_capture_immunity: bool = False
+    "Was a temporary experiment flag, now the live default (2026-08-13):\n    checkers went 0-1015 while True. True = legacy behaviour, chess's king\n    protected two ways checkers gets no equivalent for — legal.py filters out\n    any chess move leaving the king attacked (info checkers never gets about\n    its own pieces), and checkers_gen.py refuses to ever generate a jump that\n    captures a K square at all. False (current default) = symmetric: chess\n    can walk into an attack same as checkers can lose a piece, and a checkers\n    jump onto/through K is a real, game-ending capture."
 
     def config_hash(self) -> str:
         """Short stable hash identifying this exact rule set (spec 7.5)."""
@@ -374,9 +376,13 @@ class Position:
         pos._key = self._key
         return pos
 
-    def to_planes(self):
-        """NN input tensor, shape (19, 8, 8) float32 (spec 7.6). Unused today; built for a future training phase."""
-        return to_planes(self)
+    def to_planes(self, legal=None):
+        """NN input tensor, shape (planes.NUM_PLANES, 8, 8) float32 (spec 7.6).
+        `legal` lets a caller that already ran legal_moves() this ply (e.g.
+        self_play_game) hand it in instead of making to_planes() recompute
+        it for the mobility-map planes; omit it and to_planes() computes its
+        own via engine.legal.legal_moves."""
+        return to_planes(self, legal=legal)
 
     def make(self, mv: int) -> Undo:
         """Applies a packed move in place and returns an Undo to reverse it exactly (spec 7.2)."""
@@ -571,7 +577,8 @@ class Position:
                         f += df
                         continue
                     target_piece = self.board[mid]
-                    if target_piece not in CHECKER_PIECES and target_piece != 'K':
+                    king_exempt = target_piece == 'K' and self.config.king_capture_immunity
+                    if target_piece not in CHECKER_PIECES and (not king_exempt):
                         lr, lf = (r + dr, f + df)
                         while True:
                             land = rf_sq(lr, lf)
@@ -583,7 +590,11 @@ class Position:
                     break
             else:
                 mid = rf_sq(r0 + dr, f0 + df)
-                if mid is None or self.board[mid] in (EMPTY, 'K') or self.board[mid] in CHECKER_PIECES:
+                if mid is None:
+                    continue
+                mid_piece = self.board[mid]
+                king_exempt = mid_piece == 'K' and self.config.king_capture_immunity
+                if mid_piece == EMPTY or king_exempt or mid_piece in CHECKER_PIECES:
                     continue
                 land = rf_sq(r0 + 2 * dr, f0 + 2 * df)
                 if land is not None and self.board[land] == EMPTY:
@@ -630,17 +641,18 @@ DIAG4 = [(1, 1), (1, -1), (-1, 1), (-1, -1)]
 KNIGHT_OFFS = [(1, 2), (2, 1), (2, -1), (1, -2), (-1, -2), (-2, -1), (-2, 1), (-1, 2)]
 ORTHO4 = [(1, 0), (-1, 0), (0, 1), (0, -1)]
 
-def is_attacked_by_checkers(position: Position, square: int) -> bool:
-    """Spec 3.5: X is attacked if a checker on S can jump it and land empty.
-
-    Direction d = (dr, df) is the direction of travel S -> X -> L. Men only
-    travel with dr == -1 (toward rank 1, spec 3.2). Kings travel any of the
-    four diagonals; flying kings (config) may source the jump from any
-    distance along the diagonal provided the path is clear (spec 3.2).
-    """
+def checkers_attacking(position: Position, square: int) -> list[int]:
+    """Spec 3.5: source square(s) of every checker that can jump X (`square`)
+    and land empty. Direction d = (dr, df) is the direction of travel
+    S -> X -> L. Men only travel with dr == -1 (toward rank 1, spec 3.2).
+    Kings travel any of the four diagonals; flying kings (config) may source
+    the jump from any distance along the diagonal provided the path is clear
+    (spec 3.2). Empty list == not attacked; is_attacked_by_checkers is just
+    bool(this)."""
     board = position.board
     flying = position.config.flying_kings
     r1, f1 = sq_rf(square)
+    sources = []
     for dr, df in DIAG4:
         land = rf_sq(r1 + dr, f1 + df)
         if land is None or board[land] != EMPTY:
@@ -660,11 +672,15 @@ def is_attacked_by_checkers(position: Position, square: int) -> bool:
                 first = False
                 continue
             if piece == 'c' and first and (dr == -1):
-                return True
-            if piece == 'C' and (first or flying):
-                return True
+                sources.append(s)
+            elif piece == 'C' and (first or flying):
+                sources.append(s)
             break
-    return False
+    return sources
+
+def is_attacked_by_checkers(position: Position, square: int) -> bool:
+    """Spec 3.5: X is attacked if a checker on S can jump it and land empty."""
+    return bool(checkers_attacking(position, square))
 
 def _find_king(board: list[str], king_char: str) -> int | None:
     for sq, ch in enumerate(board):
@@ -967,6 +983,8 @@ def legal_moves(position: Position) -> list[int]:
     color = 'w' if position.side_to_move == Side.CHESS else 'b'
     king_char = 'K' if color == 'w' else 'k'
     pseudo = pseudo_legal_chess_moves(position, color)
+    if position.mode == 'hybrid' and (not position.config.king_capture_immunity):
+        return pseudo
     legal = []
     for mv in pseudo:
         _frm, _to, mtype = decode(mv)
@@ -1000,6 +1018,8 @@ def result(position: Position) -> Result | None:
     """None if the game continues. Evaluated in the order given in spec section 5."""
     if position.mode != 'hybrid':
         return _chess_only_result(position)
+    if not position.config.king_capture_immunity and 'K' not in position.board:
+        return Result.CHECKERS_WIN
     checkers_left = sum((1 for ch in position.board if ch in ('c', 'C')))
     if checkers_left == 0:
         return Result.CHESS_WIN
@@ -1116,10 +1136,14 @@ def move_to_str(position: Position, mv: int) -> str:
 """to_planes(): NN input tensor. Spec section 7.6. Unused by anything today;
 built now so the future training phase has a stable interface to target."""
 CHESS_PIECE_ORDER = 'PNBRQK'
-NUM_PLANES = 19
+MOBILITY_PIECE_ORDER = 'PNBRQKcC'
+NUM_PLANES = 21 + len(MOBILITY_PIECE_ORDER)
 
-def to_planes(position: Position) -> np.ndarray:
-    """Position -> (19, 8, 8) float32 NN input tensor (spec 7.6)."""
+def to_planes(position: Position, legal=None) -> np.ndarray:
+    """Position -> (NUM_PLANES, 8, 8) float32 NN input tensor (spec 7.6).
+    `legal` is the side-to-move's legal_moves() list, if the caller already
+    has one (e.g. mid self-play) — pass it in to skip recomputing it here
+    for the mobility planes. Left None, to_planes computes its own."""
     planes = np.zeros((NUM_PLANES, 8, 8), dtype=np.float32)
     idx = 0
     for piece_char in CHESS_PIECE_ORDER:
@@ -1158,6 +1182,28 @@ def to_planes(position: Position) -> np.ndarray:
     idx += 1
     planes[idx, :, :] = 1.0 if rep >= 3 else 0.0
     idx += 1
+    king_sq = None
+    for sq, ch in enumerate(position.board):
+        if ch == 'K':
+            king_sq = sq
+            break
+    threats = checkers_attacking(position, king_sq) if king_sq is not None else []
+    planes[idx, :, :] = 1.0 if threats else 0.0
+    idx += 1
+    for s in threats:
+        r, f = sq_rf(s)
+        planes[idx, r, f] = 1.0
+    idx += 1
+    if legal is None:
+        legal = _legal_moves(position)
+    mobility_idx = {ch: idx + i for i, ch in enumerate(MOBILITY_PIECE_ORDER)}
+    for mv in legal:
+        frm, to, _mtype = decode(mv)
+        plane = mobility_idx.get(position.board[frm])
+        if plane is not None:
+            r, f = sq_rf(to)
+            planes[plane, r, f] = 1.0
+    idx += len(MOBILITY_PIECE_ORDER)
     assert idx == NUM_PLANES
     return planes
 
@@ -1191,7 +1237,7 @@ class PolicyValueNet(nn.Module):
     chess_net (see train(), where the two are constructed) rather than treating
     the two sides as symmetric by default."""
 
-    def __init__(self, in_channels: int=19, channels: int=64, num_blocks: int=6):
+    def __init__(self, in_channels: int=NUM_PLANES, channels: int=64, num_blocks: int=6):
         super().__init__()
         self.stem = nn.Sequential(nn.Conv2d(in_channels, channels, kernel_size=3, padding=1), nn.GroupNorm(8, channels), nn.ReLU(inplace=True))
         self.tower = nn.Sequential(*[ResidualBlock(channels) for _ in range(num_blocks)])
@@ -1232,8 +1278,9 @@ WIN_BONUS = 150.0
 CHESS_PIECE_VALUE = {'P': 1, 'N': 3, 'B': 3, 'R': 5, 'Q': 9}
 CHESS_NORMAL_DRAW_BONUS = 12.0
 CHECKERS_NORMAL_DRAW_BONUS = 20.0
-CHESS_WORST_PENALTY = 30.0
-CHECKERS_WORST_PENALTY = 50.0
+CHESS_WORST_PENALTY = 5.0
+CHECKERS_WORST_PENALTY = 8.0
+CHESS_KING_CAPTURED_PENALTY = 10.0
 ENTROPY_COEF = 0.05
 REPETITION_STEP_PENALTY = 0.02
 
@@ -1248,32 +1295,36 @@ def _material_snapshot(board):
             chess_value += CHESS_PIECE_VALUE[ch]
     return (checker_count, chess_value)
 
-def reward_for(side, result, checkers_captured_by_chess, chess_value_captured_by_checkers, is_repetition_draw):
+def reward_for(side, result, checkers_captured_by_chess, chess_value_captured_by_checkers, is_repetition_draw, chess_king_captured=False):
     """Four tiers, best to worst: WIN (flat WIN_BONUS) > fifty-move-rule draw
     (material + a BONUS, deliberately better than a same-material loss) >
-    loss (material only, floor 0) > threefold-repetition draw / ply-cap
-    unresolved (material - a penalty sized larger than either side's max
-    possible material credit, so the result is ALWAYS negative — structurally
-    guaranteed worse than any loss, not just worse on average). See the
-    CHESS_NORMAL_DRAW_BONUS / CHESS_WORST_PENALTY comment block for why the
-    draw/threefold-draw split exists at all."""
+    loss (material only, floor 0) ≈ threefold-repetition draw / ply-cap
+    unresolved (material - a small flat penalty, floored at 0 same as a
+    loss — see CHESS_NORMAL_DRAW_BONUS / CHESS_WORST_PENALTY comment block
+    for why this tier used to be forced deeply negative and isn't anymore).
+    chess_king_captured further splits the loss tier: a CHECKERS_WIN caused
+    by the king actually being captured scores below one caused by chess
+    just running out of moves (see CHESS_KING_CAPTURED_PENALTY) — also
+    floored at 0."""
     if side == Side.CHESS:
         if result == Result.CHESS_WIN:
             return WIN_BONUS
         points = float(checkers_captured_by_chess)
+        if result == Result.CHECKERS_WIN and chess_king_captured:
+            points = max(0.0, points - CHESS_KING_CAPTURED_PENALTY)
         if result == Result.DRAW:
-            points += -CHESS_WORST_PENALTY if is_repetition_draw else CHESS_NORMAL_DRAW_BONUS
+            points = points + CHESS_NORMAL_DRAW_BONUS if not is_repetition_draw else max(0.0, points - CHESS_WORST_PENALTY)
         elif result is None:
-            points -= CHESS_WORST_PENALTY
+            points = max(0.0, points - CHESS_WORST_PENALTY)
         return points
     else:
         if result == Result.CHECKERS_WIN:
             return WIN_BONUS
         points = float(chess_value_captured_by_checkers)
         if result == Result.DRAW:
-            points += -CHECKERS_WORST_PENALTY if is_repetition_draw else CHECKERS_NORMAL_DRAW_BONUS
+            points = points + CHECKERS_NORMAL_DRAW_BONUS if not is_repetition_draw else max(0.0, points - CHECKERS_WORST_PENALTY)
         elif result is None:
-            points -= CHECKERS_WORST_PENALTY
+            points = max(0.0, points - CHECKERS_WORST_PENALTY)
         return points
 
 def _ban_repetition_moves(pos, legal_moves, seen_counts):
@@ -1325,7 +1376,7 @@ def self_play_game(chess_net, checkers_net, config, device, max_plies=800):
         if not legal:
             break
         legal = _ban_repetition_moves(pos, legal, seen_counts)
-        mv, log_prob, value, entropy = select_move(net, pos.to_planes(), legal, device)
+        mv, log_prob, value, entropy = select_move(net, pos.to_planes(legal=legal), legal, device)
         pos.make(mv)
         plies += 1
         seen_counts[pos._key] = seen_counts.get(pos._key, 0) + 1
@@ -1351,6 +1402,8 @@ def explain_result(pos, plies, max_plies=800):
             return 'all checker pieces captured -> chess wins'
         return 'checkers side to move had no legal move -> chess wins'
     if result == Result.CHECKERS_WIN:
+        if 'K' not in pos.board:
+            return 'chess king captured (king_capture_immunity=False) -> checkers wins'
         return 'chess side to move had no legal move (checkmate or stalemate) -> checkers wins'
     if result == Result.DRAW:
         if pos.repetition_count() >= 3:
@@ -1423,7 +1476,8 @@ def train(n_games, config, gamma, lr, device, checkpoint_every, log_every, chess
         tally[result_name.get(result, 'unterminated')] += 1
         cumulative = games_before + i + 1
         is_repetition_draw = result == Result.DRAW and last_pos.repetition_count() >= 3
-        chess_points = reward_for(Side.CHESS, result, checkers_captured, chess_value_captured, is_repetition_draw)
+        chess_king_captured = result == Result.CHECKERS_WIN and 'K' not in last_pos.board
+        chess_points = reward_for(Side.CHESS, result, checkers_captured, chess_value_captured, is_repetition_draw, chess_king_captured)
         checkers_points = reward_for(Side.CHECKERS, result, checkers_captured, chess_value_captured, is_repetition_draw)
         game_log.append({'game': cumulative, 'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds'), 'first_mover': side_name[first_mover], 'winner': result_name.get(result, 'unterminated'), 'plies': plies, 'seconds': round(dt, 1), 'chess_points': chess_points, 'checkers_points': checkers_points, 'reason': explain_result(last_pos, plies)})
         for side, points in ((Side.CHESS, chess_points), (Side.CHECKERS, checkers_points)):

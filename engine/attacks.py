@@ -10,17 +10,18 @@ KNIGHT_OFFS = [(1, 2), (2, 1), (2, -1), (1, -2), (-1, -2), (-2, -1), (-2, 1), (-
 ORTHO4 = [(1, 0), (-1, 0), (0, 1), (0, -1)]
 
 
-def is_attacked_by_checkers(position: Position, square: int) -> bool:
-    """Spec 3.5: X is attacked if a checker on S can jump it and land empty.
-
-    Direction d = (dr, df) is the direction of travel S -> X -> L. Men only
-    travel with dr == -1 (toward rank 1, spec 3.2). Kings travel any of the
-    four diagonals; flying kings (config) may source the jump from any
-    distance along the diagonal provided the path is clear (spec 3.2).
-    """
+def checkers_attacking(position: Position, square: int) -> list[int]:
+    """Spec 3.5: source square(s) of every checker that can jump X (`square`)
+    and land empty. Direction d = (dr, df) is the direction of travel
+    S -> X -> L. Men only travel with dr == -1 (toward rank 1, spec 3.2).
+    Kings travel any of the four diagonals; flying kings (config) may source
+    the jump from any distance along the diagonal provided the path is clear
+    (spec 3.2). Empty list == not attacked; is_attacked_by_checkers is just
+    bool(this)."""
     board = position.board
     flying = position.config.flying_kings
     r1, f1 = sq_rf(square)
+    sources = []
     for dr, df in DIAG4:
         land = rf_sq(r1 + dr, f1 + df)
         if land is None or board[land] != EMPTY:
@@ -40,11 +41,16 @@ def is_attacked_by_checkers(position: Position, square: int) -> bool:
                 first = False
                 continue
             if piece == "c" and first and dr == -1:
-                return True
-            if piece == "C" and (first or flying):
-                return True
+                sources.append(s)
+            elif piece == "C" and (first or flying):
+                sources.append(s)
             break
-    return False
+    return sources
+
+
+def is_attacked_by_checkers(position: Position, square: int) -> bool:
+    """Spec 3.5: X is attacked if a checker on S can jump it and land empty."""
+    return bool(checkers_attacking(position, square))
 
 
 def _find_king(board: list[str], king_char: str) -> int | None:

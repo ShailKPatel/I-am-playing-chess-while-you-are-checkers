@@ -270,10 +270,14 @@ class Position:
         pos._key = self._key
         return pos
 
-    def to_planes(self):
-        """NN input tensor, shape (19, 8, 8) float32 (spec 7.6). Unused today; built for a future training phase."""
+    def to_planes(self, legal=None):
+        """NN input tensor, shape (planes.NUM_PLANES, 8, 8) float32 (spec 7.6).
+        `legal` lets a caller that already ran legal_moves() this ply (e.g.
+        self_play_game) hand it in instead of making to_planes() recompute
+        it for the mobility-map planes; omit it and to_planes() computes its
+        own via engine.legal.legal_moves."""
         from engine.planes import to_planes
-        return to_planes(self)
+        return to_planes(self, legal=legal)
 
     # -- make / unmake -------------------------------------------------
     def make(self, mv: int) -> Undo:
@@ -498,8 +502,11 @@ class Position:
                     # an attacked king square is check, resolved on the chess side's
                     # own turn, never removed by a checkers jump — including a hop
                     # that only becomes possible mid-chain, after an earlier hop in
-                    # the same turn clears a blocking piece.
-                    if target_piece not in CHECKER_PIECES and target_piece != "K":
+                    # the same turn clears a blocking piece. Experiment flag
+                    # (config.king_capture_immunity=False) lifts this: K becomes
+                    # a plain capture target like any other piece.
+                    king_exempt = target_piece == "K" and self.config.king_capture_immunity
+                    if target_piece not in CHECKER_PIECES and not king_exempt:
                         lr, lf = r + dr, f + df
                         while True:
                             land = rf_sq(lr, lf)
@@ -511,7 +518,11 @@ class Position:
                     break
             else:
                 mid = rf_sq(r0 + dr, f0 + df)
-                if mid is None or self.board[mid] in (EMPTY, "K") or self.board[mid] in CHECKER_PIECES:
+                if mid is None:
+                    continue
+                mid_piece = self.board[mid]
+                king_exempt = mid_piece == "K" and self.config.king_capture_immunity
+                if mid_piece == EMPTY or king_exempt or mid_piece in CHECKER_PIECES:
                     continue
                 land = rf_sq(r0 + 2 * dr, f0 + 2 * df)
                 if land is not None and self.board[land] == EMPTY:

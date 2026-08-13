@@ -23,7 +23,7 @@ def blank(cfg, side=Side.CHESS):
 def test_trap1_king_walks_into_jump_by_vacating_landing_square():
     """Checker on e6, empty intermediate square d5, king on landing square c4.
     King's move onto d5 must be illegal (it would empty c4, enabling e6's jump)."""
-    cfg = RuleConfig()
+    cfg = RuleConfig(king_capture_immunity=True)
     pos = blank(cfg)
     pos.board[sq("e6")] = "c"
     pos.board[sq("c4")] = "K"
@@ -35,7 +35,7 @@ def test_trap1_king_walks_into_jump_by_vacating_landing_square():
 def test_trap2_discovered_check_by_vacating_landing_square():
     """King at d5 sits where a checker jump would land it if c4 (landing) empties.
     Any move of the blocking bishop off c4 is illegal, in every direction."""
-    cfg = RuleConfig()
+    cfg = RuleConfig(king_capture_immunity=True)
     pos = blank(cfg)
     pos.board[sq("d5")] = "K"
     pos.board[sq("e6")] = "c"
@@ -46,7 +46,7 @@ def test_trap2_discovered_check_by_vacating_landing_square():
 
 def test_trap3_resolving_check_by_capture_or_block():
     """Capturing the threatening checker, or occupying its landing square, resolves check."""
-    cfg = RuleConfig()
+    cfg = RuleConfig(king_capture_immunity=True)
     pos = blank(cfg)
     pos.board[sq("d4")] = "K"
     pos.board[sq("e5")] = "c"  # threatens d4, landing c3 empty
@@ -65,7 +65,7 @@ def test_trap4_no_king_capture_checkmate_detected_instead():
     The king piece itself is never removed from the board — no CHECKER_JUMP ever
     targets it (spec 3.6 Trap 4: check is evaded or the game ends, the king is
     never literally captured)."""
-    cfg = RuleConfig()
+    cfg = RuleConfig(king_capture_immunity=True)
     pos = blank(cfg)
     pos.board[sq("d4")] = "K"
     pos.board[sq("e5")] = "c"  # checks d4 (landing c3 empty)
@@ -86,7 +86,7 @@ def test_king_never_captured_mid_jump_chain():
     Chess gets no turn in between hops of one chain (spec 7.4), so nothing but
     the move generator itself can stop this — the chess-side legality filter
     (which only runs on chess's own moves) can't see it coming."""
-    cfg = RuleConfig()
+    cfg = RuleConfig(king_capture_immunity=True)
     pos = blank(cfg, Side.CHECKERS)
     pos.board[sq("d4")] = "K"
     pos.board[sq("f6")] = "P"

@@ -56,6 +56,13 @@ def legal_moves(position: Position) -> list[int]:
     color = "w" if position.side_to_move == Side.CHESS else "b"
     king_char = "K" if color == "w" else "k"
     pseudo = pseudo_legal_chess_moves(position, color)
+    if position.mode == "hybrid" and not position.config.king_capture_immunity:
+        # Flag off: no king-safety filtering at all. Chess gets exactly what
+        # checkers gets — every pseudo-legal move is legal, walking into an
+        # attack included. chess_only mode is excluded: that mode plays real
+        # FIDE chess (perft/differential-tested against it) and must always
+        # apply normal check-safety, regardless of this hybrid-game flag.
+        return pseudo
     legal = []
     for mv in pseudo:
         _frm, _to, mtype = decode(mv)

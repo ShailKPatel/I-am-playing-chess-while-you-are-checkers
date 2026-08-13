@@ -45,15 +45,19 @@
   <h2>Check and checkmate</h2>
   <p>The chess king is in check when it stands on a square a checker could jump into — that is, a checker sits
   diagonally adjacent to it in a direction it's allowed to capture in, and the square beyond the king is empty.
-  The king is never literally captured: a legality filter simply forbids any chess move that leaves the king on
-  such a square, which automatically produces normal pins, discovered checks, and — unique to this game — checks
-  that appear only because a piece moved <em>off</em> a jump's landing square. Checkmate and stalemate are both
-  scored the same way here: if the chess side has no legal move, checkers wins, whether or not the king is
-  actually attacked. (Ordinary chess treats stalemate as a draw; here that would just be an escape hatch for a
-  losing chess side to shed pieces and self-stalemate.)</p>
+  As of <code>king_capture_immunity: false</code> (the current default, spec 7.1), the king is <strong>not</strong>
+  protected: a checkers jump onto/through the king's square is a real, game-ending capture, exactly like capturing
+  any other chess piece — chess gets no legality filter checkers doesn't also get. (The old behaviour — a
+  legality filter forbidding any chess move that leaves the king attacked, producing normal pins, discovered
+  checks, etc. — is still in the engine, gated behind <code>RuleConfig(king_capture_immunity=True)</code>, but is
+  no longer the default; checkers went 0-1015 under it.) Checkmate and stalemate are still scored the same way
+  here: if the chess side has no legal move, checkers wins, whether or not the king is actually attacked.
+  (Ordinary chess treats stalemate as a draw; here that would just be an escape hatch for a losing chess side to
+  shed pieces and self-stalemate.)</p>
 
   <h2>Ending the game</h2>
   <ul>
+    <li>Chess king captured → checkers wins.</li>
     <li>Every checker piece captured → chess wins.</li>
     <li>Checkers side to move with no legal move → chess wins.</li>
     <li>Chess side to move with no legal move (checkmate <em>or</em> stalemate) → checkers wins.</li>

@@ -20,7 +20,7 @@ def blank(cfg, side):
 
 
 def test_checkmate_is_checkers_win():
-    cfg = RuleConfig()
+    cfg = RuleConfig(king_capture_immunity=True)
     pos = blank(cfg, Side.CHESS)
     pos.board[sq("d4")] = "K"
     pos.board[sq("e5")] = "c"
@@ -33,7 +33,7 @@ def test_checkmate_is_checkers_win():
 
 def test_stalemate_not_in_check_is_checkers_win_not_draw():
     """Spec 5.1: no legal move for chess covers both checkmate and stalemate as a checkers win."""
-    cfg = RuleConfig()
+    cfg = RuleConfig(king_capture_immunity=True)
     pos = blank(cfg, Side.CHESS)
     pos.board[sq("a1")] = "K"
     pos.board[sq("a2")] = "P"

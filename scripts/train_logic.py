@@ -12,6 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from engine import Position, RuleConfig, Side, Result, MoveType, decode
+from engine.planes import NUM_PLANES
 
 NUM_MOVE_TYPES = len(MoveType)
 
@@ -43,7 +44,7 @@ class PolicyValueNet(nn.Module):
     chess_net (see train(), where the two are constructed) rather than treating
     the two sides as symmetric by default."""
 
-    def __init__(self, in_channels: int = 19, channels: int = 64, num_blocks: int = 6):
+    def __init__(self, in_channels: int = NUM_PLANES, channels: int = 64, num_blocks: int = 6):
         super().__init__()
         self.stem = nn.Sequential(
             nn.Conv2d(in_channels, channels, kernel_size=3, padding=1),
@@ -121,7 +122,7 @@ WIN_BONUS = 150.0
 CHESS_PIECE_VALUE = {"P": 1, "N": 3, "B": 3, "R": 5, "Q": 9}  # king excluded, never captured (spec)
 
 # Four-tier outcome ranking (best to worst): WIN > escaped-repetition draw
-# (fifty-move-rule) > loss > gave-up-without-resolving (threefold-repetition
+# (fifty-move-rule) > loss ≈ gave-up-without-resolving (threefold-repetition
 # draw and ply-cap-unresolved, treated the same). All draws used to get one
 # flat penalty regardless of cause — but 100% of every draw ever logged
 # (thousands of games) was threefold repetition, 0% fifty-move-rule, so a
@@ -138,15 +139,30 @@ CHESS_PIECE_VALUE = {"P": 1, "N": 3, "B": 3, "R": 5, "Q": 9}  # king excluded, n
 # loss (loss stays a flat 0 floor, untouched).
 #
 # Threefold draw (and, matching it, ply-cap-unresolved — both are "avoided a
-# real result without making progress") get a penalty LARGER than either
-# side's maximum possible material credit (chess ceiling 24, checkers
-# ceiling ~39 normal/103 pathological), which makes the resulting score
-# ALWAYS negative — a hard, structural guarantee that this is worse than
-# ANY achievable loss score (loss's floor is 0), not just worse on average.
+# real result without making progress") used to get a penalty LARGER than
+# either side's max material credit, guaranteeing the score negative and
+# structurally worse than ANY loss. Walked back (2026-08-13): that made a
+# forced repetition draw punished harder than actively losing, which isn't
+# the ranking wanted. Now: same small flat penalty either side, floored at
+# 0 like a loss (see reward_for) — so worst case it TIES the worst loss (0
+# captures), and with any material captured it scores just slightly below
+# the equivalent loss, not miles below it.
 CHESS_NORMAL_DRAW_BONUS = 12.0
 CHECKERS_NORMAL_DRAW_BONUS = 20.0
-CHESS_WORST_PENALTY = 30.0  # > chess' 24-point material ceiling
-CHECKERS_WORST_PENALTY = 50.0  # > checkers' 39-point normal-game ceiling
+CHESS_WORST_PENALTY = 5.0
+CHECKERS_WORST_PENALTY = 8.0
+
+# Extra deduction on a CHECKERS_WIN loss specifically caused by the king
+# being captured (king_capture_immunity=False), vs. the same result caused
+# by chess simply running out of legal moves elsewhere on the board. Same
+# terminal Result either way, but "your king died" is a sharper, more
+# specific failure than "you got ground down to zero moves" and deserves a
+# harder loss score, not just the same material-only floor. Floored at 0
+# like every other loss (see reward_for) — deliberately never pushed
+# negative, so it can't cross into threefold-draw territory (that tier's
+# whole point is being structurally worse than ANY loss, king-capture
+# included).
+CHESS_KING_CAPTURED_PENALTY = 10.0
 
 # Entropy bonus: without it, pure policy-gradient (REINFORCE) has no pressure
 # to keep exploring — repeated updates saturate the softmax toward one move,
@@ -189,32 +205,39 @@ def _material_snapshot(board):
     return checker_count, chess_value
 
 
-def reward_for(side, result, checkers_captured_by_chess, chess_value_captured_by_checkers, is_repetition_draw):
+def reward_for(side, result, checkers_captured_by_chess, chess_value_captured_by_checkers,
+                is_repetition_draw, chess_king_captured=False):
     """Four tiers, best to worst: WIN (flat WIN_BONUS) > fifty-move-rule draw
     (material + a BONUS, deliberately better than a same-material loss) >
-    loss (material only, floor 0) > threefold-repetition draw / ply-cap
-    unresolved (material - a penalty sized larger than either side's max
-    possible material credit, so the result is ALWAYS negative — structurally
-    guaranteed worse than any loss, not just worse on average). See the
-    CHESS_NORMAL_DRAW_BONUS / CHESS_WORST_PENALTY comment block for why the
-    draw/threefold-draw split exists at all."""
+    loss (material only, floor 0) ≈ threefold-repetition draw / ply-cap
+    unresolved (material - a small flat penalty, floored at 0 same as a
+    loss — see CHESS_NORMAL_DRAW_BONUS / CHESS_WORST_PENALTY comment block
+    for why this tier used to be forced deeply negative and isn't anymore).
+    chess_king_captured further splits the loss tier: a CHECKERS_WIN caused
+    by the king actually being captured scores below one caused by chess
+    just running out of moves (see CHESS_KING_CAPTURED_PENALTY) — also
+    floored at 0."""
     if side == Side.CHESS:
         if result == Result.CHESS_WIN:
             return WIN_BONUS
         points = float(checkers_captured_by_chess)  # 1 point per checker piece captured
+        if result == Result.CHECKERS_WIN and chess_king_captured:
+            points = max(0.0, points - CHESS_KING_CAPTURED_PENALTY)
         if result == Result.DRAW:
-            points += -CHESS_WORST_PENALTY if is_repetition_draw else CHESS_NORMAL_DRAW_BONUS
+            points = points + CHESS_NORMAL_DRAW_BONUS if not is_repetition_draw \
+                else max(0.0, points - CHESS_WORST_PENALTY)
         elif result is None:
-            points -= CHESS_WORST_PENALTY
+            points = max(0.0, points - CHESS_WORST_PENALTY)
         return points
     else:
         if result == Result.CHECKERS_WIN:
             return WIN_BONUS
         points = float(chess_value_captured_by_checkers)  # standard chess piece values
         if result == Result.DRAW:
-            points += -CHECKERS_WORST_PENALTY if is_repetition_draw else CHECKERS_NORMAL_DRAW_BONUS
+            points = points + CHECKERS_NORMAL_DRAW_BONUS if not is_repetition_draw \
+                else max(0.0, points - CHECKERS_WORST_PENALTY)
         elif result is None:
-            points -= CHECKERS_WORST_PENALTY
+            points = max(0.0, points - CHECKERS_WORST_PENALTY)
         return points
 
 
@@ -279,7 +302,7 @@ def self_play_game(chess_net, checkers_net, config, device, max_plies=800):
         if not legal:
             break
         legal = _ban_repetition_moves(pos, legal, seen_counts)
-        mv, log_prob, value, entropy = select_move(net, pos.to_planes(), legal, device)
+        mv, log_prob, value, entropy = select_move(net, pos.to_planes(legal=legal), legal, device)
         pos.make(mv)
         plies += 1
         seen_counts[pos._key] = seen_counts.get(pos._key, 0) + 1
@@ -311,6 +334,8 @@ def explain_result(pos, plies, max_plies=800):
             return "all checker pieces captured -> chess wins"
         return "checkers side to move had no legal move -> chess wins"
     if result == Result.CHECKERS_WIN:
+        if "K" not in pos.board:
+            return "chess king captured (king_capture_immunity=False) -> checkers wins"
         return "chess side to move had no legal move (checkmate or stalemate) -> checkers wins"
     if result == Result.DRAW:
         if pos.repetition_count() >= 3:
@@ -422,8 +447,12 @@ def train(
         # threefold draw from a fifty-move-rule draw for reward_for's 4-tier
         # split. Meaningless when result != DRAW; reward_for ignores it then.
         is_repetition_draw = result == Result.DRAW and last_pos.repetition_count() >= 3
-        chess_points = reward_for(Side.CHESS, result, checkers_captured, chess_value_captured, is_repetition_draw)
-        checkers_points = reward_for(Side.CHECKERS, result, checkers_captured, chess_value_captured, is_repetition_draw)
+        # Only meaningful when result == CHECKERS_WIN; reward_for ignores it otherwise.
+        chess_king_captured = result == Result.CHECKERS_WIN and "K" not in last_pos.board
+        chess_points = reward_for(Side.CHESS, result, checkers_captured, chess_value_captured,
+                                   is_repetition_draw, chess_king_captured)
+        checkers_points = reward_for(Side.CHECKERS, result, checkers_captured, chess_value_captured,
+                                      is_repetition_draw)
         game_log.append({
             "game": cumulative,
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),

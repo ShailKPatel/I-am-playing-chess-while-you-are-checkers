@@ -66,7 +66,7 @@ def test_make_unmake_restores_key_100k():
 
 
 def test_legal_moves_never_leaves_chess_king_attacked():
-    cfg = RuleConfig(first_mover="chess")
+    cfg = RuleConfig(first_mover="chess", king_capture_immunity=True)
     rng = random.Random(11)
     checked = 0
     for _game in range(100):
