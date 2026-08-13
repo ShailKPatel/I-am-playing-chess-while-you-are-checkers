@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chesskers"
+version = "0.1.0"
+description = "Chess army vs checkers army, each chasing the other's victory condition."
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+]
+
+[project.optional-dependencies]
+web = ["fastapi", "uvicorn"]
+dev = ["pytest", "python-chess"]
+# torch is only needed to run agents/neural_agent.py locally (loading checkpoints
+# trained via bot_training/, a standalone bundle not installed as part of this package).
+neural = ["torch"]
+
+[project.scripts]
+chesskers = "cli.main:main"
+
+[tool.setuptools]
+packages = ["engine", "envs", "agents", "cli", "api"]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: perft depth 5 and other expensive tests",
+]

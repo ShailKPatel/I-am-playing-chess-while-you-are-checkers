@@ -1,0 +1,67 @@
+<title>I am playing chess while you are playing checkers</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+
+<header>
+  <h1>♟ I am playing chess while you are playing checkers ⛀</h1>
+  <nav>
+    <a href="/rules.html">Rules</a>
+    <a href="/about.html">About</a>
+  </nav>
+</header>
+
+<main>
+  <div id="board-wrap">
+    <div id="board"></div>
+    <div id="status">Loading...</div>
+  </div>
+
+  <div id="controls">
+    <h2>Game setup</h2>
+    <label>Mode
+      <select id="mode-select">
+        <option value="hvh">Human vs human</option>
+        <option value="hvb">Human vs bot</option>
+      </select>
+    </label>
+    <div id="side-row" style="display:none">
+      <label>Your side
+        <select id="side-select">
+          <option value="chess">Chess</option>
+          <option value="checkers">Checkers</option>
+        </select>
+      </label>
+    </div>
+    <label>Who goes first
+      <select id="first-mover-select">
+        <option value="random" selected>Random (50/50)</option>
+        <option value="chess">Chess</option>
+        <option value="checkers">Checkers</option>
+      </select>
+    </label>
+    <div id="difficulty-row" style="display:none">
+      <label>Bot difficulty
+        <select id="difficulty-select">
+          <option value="1">1 (easy)</option>
+          <option value="2">2</option>
+          <option value="3" selected>3</option>
+          <option value="4">4</option>
+          <option value="5">5 (hard)</option>
+        </select>
+      </label>
+    </div>
+    <button id="new-game-btn">New game</button>
+    <label style="flex-direction: row; align-items: center; gap: 0.5rem;">
+      <input type="checkbox" id="highlight-movable-toggle" checked>
+      Highlight movable pieces
+    </label>
+  </div>
+
+  <div id="moves-panel">
+    <h2>Moves</h2>
+    <div id="move-list"></div>
+  </div>
+</main>
+
+<script src="/board.js"></script>

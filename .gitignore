@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Test / lint caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Notebooks (Colab/Jupyter)
+.ipynb_checkpoints/
+
+# Logs and run output
+*.log
+*.jsonl
+nohup.out
+
+# Env / secrets
+.env
+.env.*
+
+# Model weights
+bot_training/*.pt
+bot_training_backups/*.pt
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

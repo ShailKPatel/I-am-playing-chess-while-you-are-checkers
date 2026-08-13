@@ -1,0 +1,69 @@
+<title>I am playing chess while you are playing checkers — Rules</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<style>
+  article { max-width: 760px; margin: 0 auto; background: var(--panel); border-radius: 8px; padding: 1.5rem 2rem; line-height: 1.6; }
+  article h2 { color: var(--accent); margin-top: 2rem; }
+  article code { background: var(--bg); padding: 0.1rem 0.3rem; border-radius: 3px; }
+</style>
+
+<header>
+  <h1>♟ I am playing chess while you are playing checkers ⛀</h1>
+  <nav><a href="/">Play</a><a href="/about.html">About</a></nav>
+</header>
+
+<article>
+  <p>Each side wins by achieving the <em>opponent's</em> game's victory condition. This is the idea the
+  project name is built on — you're playing chess while your opponent is playing checkers, and vice versa.</p>
+
+  <table>
+    <tr><th>Side</th><th>Army</th><th>Must achieve</th></tr>
+    <tr><td>Chess (White)</td><td>16 standard chess pieces</td><td>The checkers win: capture every enemy piece, or leave the enemy with no legal move</td></tr>
+    <tr><td>Checkers (Black)</td><td>24 checker men</td><td>The chess win: checkmate the enemy king</td></tr>
+  </table>
+
+  <h2>Why checkers start on both light and dark squares</h2>
+  <p>A checker piece never changes the colour of square it stands on — every diagonal move or jump keeps it on the
+  same colour for the whole game. In real checkers all the men start on one colour, which here would mean a
+  checkers army that can only ever attack half the board. The chess king could simply stand on the other colour
+  forever and never be checkmated. Filling ranks 6–8 with checkers on <em>both</em> colours is a setup change only
+  — no checkers rule is different, every piece still steps and jumps exactly as it always has. It does mean
+  light-square and dark-square checkers can never jump each other or chain a multi-jump between colours; they're
+  effectively two interleaved armies that only coordinate through blocking and occupancy.</p>
+
+  <h2>Movement</h2>
+  <p>Chess pieces move by the standard FIDE rules: pawns (with double push, diagonal capture, promotion,
+  en passant), knights, bishops, rooks, the queen, and the king (including castling). A chess piece captures a
+  checker simply by moving onto its square — there's no special mechanic. Checkers block sliding pieces exactly
+  like any other occupied square.</p>
+  <p>A checker <strong>man</strong> steps one square diagonally forward (toward rank 1) onto an empty square, and
+  captures by jumping a diagonally-adjacent enemy chess piece and landing on the empty square immediately beyond
+  it. A checker <strong>king</strong> (after a man reaches rank 1) does the same in all four diagonal directions.
+  Checkers can never capture each other — only chess pieces are enemies to a checker.</p>
+
+  <h2>Check and checkmate</h2>
+  <p>The chess king is in check when it stands on a square a checker could jump into — that is, a checker sits
+  diagonally adjacent to it in a direction it's allowed to capture in, and the square beyond the king is empty.
+  The king is never literally captured: a legality filter simply forbids any chess move that leaves the king on
+  such a square, which automatically produces normal pins, discovered checks, and — unique to this game — checks
+  that appear only because a piece moved <em>off</em> a jump's landing square. Checkmate and stalemate are both
+  scored the same way here: if the chess side has no legal move, checkers wins, whether or not the king is
+  actually attacked. (Ordinary chess treats stalemate as a draw; here that would just be an escape hatch for a
+  losing chess side to shed pieces and self-stalemate.)</p>
+
+  <h2>Ending the game</h2>
+  <ul>
+    <li>Every checker piece captured → chess wins.</li>
+    <li>Checkers side to move with no legal move → chess wins.</li>
+    <li>Chess side to move with no legal move (checkmate <em>or</em> stalemate) → checkers wins.</li>
+    <li>Threefold repetition, or 50 moves with no capture, checker promotion, or pawn move → draw.</li>
+  </ul>
+  <p>Checkers capturing every chess piece is <em>not</em> a win condition — if chess is reduced to a lone king,
+  play continues until checkmate, stalemate, or a draw rule fires.</p>
+
+  <h2>Configurable rules</h2>
+  <p>Mandatory capture, maximal (must-take-the-longest-chain) capture, and flying kings are all standard checkers
+  variants and can be toggled server-side; see <code>GET /api/config</code> for the ruleset this deployment is
+  running.</p>
+</article>

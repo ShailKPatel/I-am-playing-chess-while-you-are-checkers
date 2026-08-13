@@ -1,0 +1,40 @@
+<title>I am playing chess while you are playing checkers — About</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<style>
+  article { max-width: 760px; margin: 0 auto; background: var(--panel); border-radius: 8px; padding: 1.5rem 2rem; line-height: 1.6; }
+  article h2 { color: var(--accent); margin-top: 2rem; }
+</style>
+
+<header>
+  <h1>♟ I am playing chess while you are playing checkers ⛀</h1>
+  <nav><a href="/">Play</a><a href="/rules.html">Rules</a></nav>
+</header>
+
+<article>
+  <p><em>I am playing chess while you are playing checkers</em> puts a standard chess army and a checkers army on the same board, and swaps their goals: the chess
+  side wins the way a checkers game is won (clear the board, or leave the opponent no move), and the checkers
+  side wins the way a chess game is won (checkmate). Neither army is built for the job it's been handed — a
+  checkers side has to build a mating net out of pieces that shuffle one square diagonally, and the chess side
+  can't just simplify into a won endgame, because a "won" material position is worth nothing until the board is
+  literally empty. That tension is the whole game.</p>
+
+  <h2>How it's built</h2>
+  <p>The rules engine is a pure-Python package with no web or UI dependencies at all — it can be imported and
+  played end to end with nothing installed but <code>numpy</code>. The FastAPI service and vanilla-JS frontend
+  you're using right now are one deployment target for that engine; a future training pipeline (self-play,
+  reinforcement learning) is meant to be a peer of this web app, not built on top of it, sharing the exact same
+  rules code so a trained model and the deployed site can never quietly disagree about what a legal move is.</p>
+
+  <h2>Balance</h2>
+  <p>The 24-checkers-vs-16-chess-pieces starting layout is a first guess, not a playtested balance point — the
+  chess army is far more mobile, and a queen can pick off short-range checkers with little counterplay. Alternate
+  layouts exist and are meant to be compared with the CLI's <code>selfplay</code> and <code>match</code> commands
+  rather than hand-tuned.</p>
+
+  <h2>Stateless by design</h2>
+  <p>There's no database and no server-side session: the client holds the game state and posts it back with every
+  request. That's partly simplicity and partly practical — this runs on free-tier hosting that spins containers
+  down when idle, and a stateless design means a cold restart never loses a game in progress.</p>
+</article>
