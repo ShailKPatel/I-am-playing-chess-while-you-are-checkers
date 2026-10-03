@@ -17,6 +17,7 @@ import os
 
 from engine.board import Position, Side
 from engine.moves import decode, MoveType
+from engine.planes import NUM_PLANES
 
 DEFAULT_CHESS_PATH = "bot_training/chess_net.pt"
 DEFAULT_CHECKERS_PATH = "bot_training/checkers_net.pt"
@@ -42,7 +43,7 @@ class NeuralAgent:
                 return nn.functional.relu(out + residual)
 
         class PolicyValueNet(nn.Module):
-            def __init__(self, in_channels: int = 19, channels: int = 128, num_blocks: int = 10):
+            def __init__(self, in_channels: int = NUM_PLANES, channels: int = 128, num_blocks: int = 10):
                 super().__init__()
                 self.stem = nn.Sequential(
                     nn.Conv2d(in_channels, channels, kernel_size=3, padding=1),
